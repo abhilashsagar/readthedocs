@@ -1,0 +1,122 @@
+Yes, you can achieve inter-process synchronization using named mutexes on Linux. Here's an example:
+
+Program 1 (process1.c):
+
+```c
+#include <stdio.h>
+#include <stdlib.h>
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <unistd.h>
+
+int main() {
+    const char *mutex_name = "/my_mutex";
+
+    // Create or open the named mutex
+    int fd = shm_open(mutex_name, O_CREAT | O_RDWR, 0666);
+    if (fd == -1) {
+        perror("Mutex creation failed");
+        exit(EXIT_FAILURE);
+    }
+
+    // Set the size of the shared memory object to the size of pthread_mutex_t
+    if (ftruncate(fd, sizeof(pthread_mutex_t)) == -1) {
+        perror("Mutex size setting failed");
+        exit(EXIT_FAILURE);
+    }
+
+    // Map the shared memory object
+    pthread_mutex_t *mutex = (pthread_mutex_t *)mmap(NULL, sizeof(pthread_mutex_t),
+                                                      PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+    if (mutex == MAP_FAILED) {
+        perror("Mutex mapping failed");
+        exit(EXIT_FAILURE);
+    }
+
+    // Initialize the mutex
+    pthread_mutexattr_t mutex_attr;
+    pthread_mutexattr_init(&mutex_attr);
+    pthread_mutexattr_setpshared(&mutex_attr, PTHREAD_PROCESS_SHARED);
+    pthread_mutex_init(mutex, &mutex_attr);
+
+    while (1) {
+        // Lock the mutex
+        pthread_mutex_lock(mutex);
+
+        // Critical section
+        printf("Critical Section: Process 1\n");
+        // Simulate some work in the critical section
+        sleep(1);
+
+        // Unlock the mutex
+        pthread_mutex_unlock(mutex);
+
+        // Simulate some non-critical work
+        usleep(500000);
+    }
+
+    // Clean up
+    pthread_mutex_destroy(mutex);
+    pthread_mutexattr_destroy(&mutex_attr);
+    munmap(mutex, sizeof(pthread_mutex_t));
+    close(fd);
+    shm_unlink(mutex_name);
+
+    return 0;
+}
+```
+
+Program 2 (process2.c):
+
+```c
+#include <stdio.h>
+#include <stdlib.h>
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <unistd.h>
+
+int main() {
+    const char *mutex_name = "/my_mutex";
+
+    // Open the named mutex
+    int fd = shm_open(mutex_name, O_RDWR, 0666);
+    if (fd == -1) {
+        perror("Mutex opening failed");
+        exit(EXIT_FAILURE);
+    }
+
+    // Map the shared memory object
+    pthread_mutex_t *mutex = (pthread_mutex_t *)mmap(NULL, sizeof(pthread_mutex_t),
+                                                      PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+    if (mutex == MAP_FAILED) {
+        perror("Mutex mapping failed");
+        exit(EXIT_FAILURE);
+    }
+
+    while (1) {
+        // Lock the mutex
+        pthread_mutex_lock(mutex);
+
+        // Critical section
+        printf("Critical Section: Process 2\n");
+        // Simulate some work in the critical section
+        sleep(1);
+
+        // Unlock the mutex
+        pthread_mutex_unlock(mutex);
+
+        // Simulate some non-critical work
+        usleep(500000);
+    }
+
+    // Clean up
+    munmap(mutex, sizeof(pthread_mutex_t));
+    close(fd);
+
+    return 0;
+}
+```
+
+This example uses a named mutex created in shared memory, allowing two processes to synchronize their critical sections using the mutex.
